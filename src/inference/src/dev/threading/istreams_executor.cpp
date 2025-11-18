@@ -155,6 +155,36 @@ IStreamsExecutor::Config IStreamsExecutor::Config::make_default_multi_threaded(
     return streamConfig;
 }
 
+std::vector<int> parseSingleStream(const std::string& streamStr) {
+    std::vector<int> cores;
+    std::stringstream ss(streamStr);
+    std::string token;
+
+    while (std::getline(ss, token, ',')) {
+        std::stringstream s_out;
+        if (!token.empty()) {
+            try {
+                cores.push_back(std::stoi(token));
+            } catch (const std::exception& e) {
+                std::cerr << "invalid core ID '" << token << "', skip" << std::endl;
+            }
+        }
+    }
+    return cores;
+}
+
+std::vector<std::vector<int>> parseCoreBindings(const std::string& envValue) {
+    std::vector<std::vector<int>> result;
+    std::stringstream ss(envValue);
+    std::string streamToken;
+    while (std::getline(ss, streamToken, '_')) {
+        if (!streamToken.empty()) {
+            result.push_back(parseSingleStream(streamToken));
+        }
+    }
+    return result;
+}
+
 void IStreamsExecutor::Config::update_executor_config() {
     const auto proc_type_table = get_proc_type_table();
     bool streams_info_available = false;
@@ -275,7 +305,23 @@ void IStreamsExecutor::Config::update_executor_config() {
     }
 
     if (_cpu_pinning || _cpu_reservation) {
-        reserve_available_cpus(_streams_info_table, _stream_processor_ids, _cpu_reservation ? CPU_USED : NOT_USED);
+        if (const char* envValue = std::getenv("TS_OV_BIND_CORES")) {
+            std::cout<<"[OpenVINO] TS_OV_BIND_CORES env =" << envValue <<std::endl;
+            _stream_processor_ids = parseCoreBindings(envValue);
+        }
+        if (_stream_processor_ids.empty()) {
+            reserve_available_cpus(_streams_info_table, _stream_processor_ids, _cpu_reservation ? CPU_USED : NOT_USED);
+        }else {
+            int stream_id = 0;
+            for (auto& vec: _stream_processor_ids) {
+                std::cout<<"[OpenVINO] stream_id = "<<stream_id<<" bind core ";
+                for (auto& core_id: vec) {
+                    std::cout<<core_id<<" ";
+                }
+                std::cout<<std::endl;
+                stream_id++;
+            }
+        }
     }
 
     // Recaculate _streams, _threads and _threads_per_stream by _streams_info_table

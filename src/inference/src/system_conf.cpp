@@ -439,10 +439,35 @@ int get_current_numa_node_id() {
     return 0;
 }
 #    endif
-
+std::once_flag flag;
 std::vector<std::vector<int>> get_proc_type_table() {
     CPU& cpu = cpu_info();
     std::lock_guard<std::mutex> lock{cpu._cpu_mutex};
+
+
+    auto ts_core_arr_get = [&cpu]() {
+      std::call_once(flag, [&cpu]() {
+          if (cpu._proc_type_table[0][0] ==1) {
+              if (const char* envValue = std::getenv("TS_OV_BIND_CORES")) {
+                std::vector<int> core_arr;
+                std::stringstream ss(envValue);
+                std::string token;
+
+                while (std::getline(ss, token, '_')) {
+                    core_arr.push_back(std::stoi(token));
+                }
+                auto core_count = core_arr.size();
+                if (core_count> 1 ) {
+                    std::cout<<"[OpenVINO] ov get core count 1, TS set core count to "<<core_count<<std::endl;
+                    cpu._proc_type_table[0][0] = core_count;
+                    cpu._proc_type_table[0][1] = core_count;
+                }
+            }
+          }
+      });
+    };
+    ts_core_arr_get();
+
     return cpu._proc_type_table;
 }
 

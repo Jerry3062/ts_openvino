@@ -38,13 +38,31 @@ struct CPUStreamsExecutor::Impl {
                   _ncpus(ncpus),
                   _cpu_ids(cpu_ids) {}
             void on_scheduler_entry(bool) override {
+                // disable this code to disable openvino thread pinning
+                // std::cout<<"on_scheduler_entry disable thread affinity"<<std::endl;
                 pin_thread_to_vacant_core(tbb::this_task_arena::current_thread_index(),
                                           _threadBindingStep,
                                           _ncpus,
                                           _mask,
                                           _cpu_ids);
+#ifdef __linux__
+                auto priority_chr = getenv("TS_OV_THREAD_PRIORITY");
+                if (priority_chr != nullptr) {
+                    sched_param param{};
+                    param.sched_priority = std::stoi(priority_chr);
+
+                    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) != 0) {
+                        // std::cerr << "[OpenVINO] Failed to set SCHED_FIFO priority. Need root privileges?" << std::endl;
+                    }else {
+                        // std::cout << "[OpenVINO] set SCHED_FIFO priority=" << param.sched_priority << " success" << std::endl;
+                    }
+                }
+
+#endif // __linux__
+
             }
             void on_scheduler_exit(bool) override {
+                // disable this code to disable openvino thread pinning
                 pin_current_thread_by_mask(_ncpus, _mask);
             }
             ~Observer() override = default;
