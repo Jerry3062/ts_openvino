@@ -29,19 +29,14 @@ void set_env(const std::string& name, const std::string& value) {
 #endif
 }
 
-std::string build_binding_string(int streams, int threads) {
+std::string build_binding_string(int total_threads) {
     int core_id = 1;
     std::ostringstream oss;
-    for (int s = 0; s < streams; ++s) {
+    for (int s = 0; s < total_threads; ++s) {
         if (s > 0) {
             oss << '_';
         }
-        for (int t = 0; t < threads; ++t) {
-            if (t > 0) {
-                oss << ',';
-            }
-            oss << core_id++;
-        }
+        oss << core_id++;
     }
     return oss.str();
 }
@@ -54,15 +49,16 @@ void zero_inputs(ov::InferRequest& request) {
 }
 
 void print_usage(const char* app) {
-    std::cout << "Usage: " << app << " <path_to_model> <streams> <threads_per_stream>\n";
+    std::cout << "Usage: " << app << " <path_to_model> <streams> <threads_per_stream> <total_threads>\n";
     std::cout << "  path_to_model      - required OpenVINO IR (.xml/.onnx)\n";
     std::cout << "  streams            - positive integer number of CPU streams\n";
     std::cout << "  threads_per_stream - positive integer threads allocated per stream\n";
+    std::cout << "  total_threads      - positive integer total threads to bind\n";
 }
 }  // namespace
 
 int main(int argc, char* argv[]) {
-    if (argc != 4) {
+    if (argc != 5) {
         print_usage(argv[0]);
         return EXIT_FAILURE;
     }
@@ -70,6 +66,7 @@ int main(int argc, char* argv[]) {
     const std::string model_path = argv[1];
     const int streams = std::stoi(argv[2]);
     const int threads_per_stream = std::stoi(argv[3]);
+    const int total_threads = std::stoi(argv[4]);
 
     if (streams <= 0 || threads_per_stream <= 0) {
         std::cerr << "streams and threads_per_stream must be positive integers\n";
@@ -77,7 +74,7 @@ int main(int argc, char* argv[]) {
     }
 
     try {
-        const std::string binding = build_binding_string(streams, threads_per_stream);
+        const std::string binding = build_binding_string(total_threads);
         set_env("TS_OV_BIND_CORES", binding);
         std::cout << "[ts_bench] TS_OV_BIND_CORES=" << binding << std::endl;
 

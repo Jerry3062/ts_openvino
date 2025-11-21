@@ -8,6 +8,7 @@
 #include <climits>
 #include <tuple>
 #include <utility>
+#include <mutex>
 
 #include "openvino/runtime/system_conf.hpp"
 
@@ -47,6 +48,7 @@ bool pin_current_thread_by_mask(int ncores, const CpuSet& procMask) {
     return 0 == sched_setaffinity(0, CPU_ALLOC_SIZE(ncores), procMask.get());
 }
 
+    std::once_flag flag;
 bool pin_thread_to_vacant_core(int thrIdx,
                                int hyperthreads,
                                int ncores,
@@ -82,7 +84,37 @@ bool pin_thread_to_vacant_core(int thrIdx,
     CpuSet targetMask{CPU_ALLOC(ncores)};
     CPU_ZERO_S(size, targetMask.get());
     CPU_SET_S(mapped_idx, size, targetMask.get());
-    bool res = pin_current_thread_by_mask(ncores, targetMask);
+
+    static std::vector<int> ts_cpu_ids;
+    auto ts_core_arr_get = []() {
+        std::call_once(flag, []() {
+            if (const char* envValue = std::getenv("TS_OV_BIND_CORES")) {
+                std::cout<< "[OpenVINO] TS_OV_BIND_CORES=" << envValue << " , all thread bind these cores" <<  std::endl;
+                std::stringstream coreTokens(envValue);
+                std::string coreToken;
+                while (std::getline(coreTokens, coreToken, '_')) {
+                    if (coreToken.empty()) {
+                        continue;
+                    }
+                    auto core_id = std::stoi(coreToken);
+                    ts_cpu_ids.emplace_back(core_id);
+                }
+            }
+        });
+    };
+    ts_core_arr_get();
+
+    bool res;
+    if (!ts_cpu_ids.empty()) {
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        for (int core : ts_cpu_ids) {
+            CPU_SET(core, &cpuset);
+        }
+        res = (0 == sched_setaffinity(0, sizeof(cpu_set_t), &cpuset));
+    }else {
+        res = pin_current_thread_by_mask(ncores, targetMask);
+    }
     return res;
 }
 

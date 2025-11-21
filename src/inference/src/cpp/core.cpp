@@ -63,7 +63,7 @@ std::string find_plugins_xml(const std::string& xml_file) {
 class Core::Impl : public CoreImpl {
 public:
     Impl() : ov::CoreImpl() {
-        std::cout<<"[OpenVINO] TS modify use openvino with core binding and thread proiority set"<<std::endl;
+        std::cout<<"[OpenVINO] TS modify use openvino with core group binding and thread proiority set"<<std::endl;
     }
 };
 
