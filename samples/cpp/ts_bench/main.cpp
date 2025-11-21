@@ -89,11 +89,22 @@ int main(int argc, char* argv[]) {
 
         auto model = core.read_model(model_path);
         auto compiled_model = core.compile_model(model, "CPU", properties);
-        auto infer_request = compiled_model.create_infer_request();
-        zero_inputs(infer_request);
+
+        std::vector<ov::InferRequest> infer_requests;
+        infer_requests.reserve(streams);
+        for (int i = 0; i < streams; ++i) {
+            auto request = compiled_model.create_infer_request();
+            zero_inputs(request);
+            infer_requests.emplace_back(std::move(request));
+        }
 
         for (int i = 0; i < kWarmupIterations; ++i) {
-            infer_request.infer();
+            for (auto& request : infer_requests) {
+                request.start_async();
+            }
+            for (auto& request : infer_requests) {
+                request.wait();
+            }
         }
 
         double total_ms = 0.0;
@@ -101,7 +112,12 @@ int main(int argc, char* argv[]) {
 
         for (int iter = 0; iter < kBenchmarkIterations; ++iter) {
             const auto start = std::chrono::high_resolution_clock::now();
-            infer_request.infer();
+            for (auto& request : infer_requests) {
+                request.start_async();
+            }
+            for (auto& request : infer_requests) {
+                request.wait();
+            }
             const auto end = std::chrono::high_resolution_clock::now();
             const double ms = std::chrono::duration<double, std::milli>(end - start).count();
             total_ms += ms;
