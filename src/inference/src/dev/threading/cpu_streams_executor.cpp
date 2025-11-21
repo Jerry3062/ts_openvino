@@ -6,8 +6,13 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <cstdlib>
 #include <memory>
 #include <mutex>
+#ifdef __linux__
+#    include <sched.h>
+#endif
+
 #include <queue>
 #include <set>
 #include <thread>
@@ -46,18 +51,30 @@ struct CPUStreamsExecutor::Impl {
                                           _mask,
                                           _cpu_ids);
 #ifdef __linux__
-                auto priority_chr = getenv("TS_OV_THREAD_PRIORITY");
+                auto priority_chr = std::getenv("TS_OV_THREAD_PRIORITY");
                 if (priority_chr != nullptr) {
-                    sched_param param{};
-                    param.sched_priority = std::stoi(priority_chr);
-
-                    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) != 0) {
-                        // std::cerr << "[OpenVINO] Failed to set SCHED_FIFO priority. Need root privileges?" << std::endl;
-                    }else {
-                        // std::cout << "[OpenVINO] set SCHED_FIFO priority=" << param.sched_priority << " success" << std::endl;
+                    try {
+                        const int priority = std::stoi(priority_chr);
+                        const int min_priority = sched_get_priority_min(SCHED_FIFO);
+                        const int max_priority = sched_get_priority_max(SCHED_FIFO);
+                        if (priority < min_priority || priority > max_priority) {
+                            std::cerr << "[OpenVINO] TS_OV_THREAD_PRIORITY must be between "
+                                      << min_priority << " and " << max_priority << std::endl;
+                            std::exit(EXIT_FAILURE);
+                        }
+                        sched_param param{};
+                        param.sched_priority = priority;
+                        if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) != 0) {
+                            // std::cerr << "[OpenVINO] Failed to set SCHED_FIFO priority. Need root privileges?" << std::endl;
+                        } else {
+                            // std::cout << "[OpenVINO] set SCHED_FIFO priority=" << param.sched_priority << " success" << std::endl;
+                        }
+                    } catch (const std::exception& ex) {
+                        std::cerr << "[OpenVINO] invalid TS_OV_THREAD_PRIORITY '" << priority_chr
+                                  << "': " << ex.what() << std::endl;
+                        std::exit(EXIT_FAILURE);
                     }
                 }
-
 #endif // __linux__
 
             }

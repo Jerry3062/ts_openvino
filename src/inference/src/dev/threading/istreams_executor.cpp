@@ -185,6 +185,38 @@ std::vector<std::vector<int>> parseCoreBindings(const std::string& envValue) {
     return result;
 }
 
+void validate_core_bindings_or_throw(const std::vector<std::vector<int>>& stream_processor_ids,
+                                     const int expected_streams,
+                                     const int expected_threads_per_stream) {
+    if (stream_processor_ids.empty()) {
+        return;
+    }
+    if (expected_streams <= 0) {
+        OPENVINO_THROW("TS_OV_BIND_CORES requires positive number of streams.");
+    }
+    if (expected_threads_per_stream <= 0) {
+        OPENVINO_THROW("TS_OV_BIND_CORES requires positive threads per stream.");
+    }
+    if (stream_processor_ids.size() != static_cast<size_t>(expected_streams)) {
+        OPENVINO_THROW("TS_OV_BIND_CORES specifies ",
+                       stream_processor_ids.size(),
+                       " stream entries but ",
+                       expected_streams,
+                       " streams are configured.");
+    }
+    for (size_t i = 0; i < stream_processor_ids.size(); ++i) {
+        if (stream_processor_ids[i].size() != static_cast<size_t>(expected_threads_per_stream)) {
+            OPENVINO_THROW("TS_OV_BIND_CORES stream ",
+                           i,
+                           " specifies ",
+                           stream_processor_ids[i].size(),
+                           " cores but ",
+                           expected_threads_per_stream,
+                           " threads per stream are configured.");
+        }
+    }
+}
+
 void IStreamsExecutor::Config::update_executor_config() {
     const auto proc_type_table = get_proc_type_table();
     bool streams_info_available = false;
@@ -304,10 +336,12 @@ void IStreamsExecutor::Config::update_executor_config() {
         }
     }
 
+    bool manual_core_binding_requested = false;
     if (_cpu_pinning || _cpu_reservation) {
         if (const char* envValue = std::getenv("TS_OV_BIND_CORES")) {
             std::cout<<"[OpenVINO] TS_OV_BIND_CORES env =" << envValue <<std::endl;
             _stream_processor_ids = parseCoreBindings(envValue);
+            manual_core_binding_requested = !_stream_processor_ids.empty();
         }
         if (_stream_processor_ids.empty()) {
             reserve_available_cpus(_streams_info_table, _stream_processor_ids, _cpu_reservation ? CPU_USED : NOT_USED);
@@ -338,6 +372,10 @@ void IStreamsExecutor::Config::update_executor_config() {
     }
     _threads_per_stream = _streams_info_table[0][THREADS_PER_STREAM];
     _streams = _streams > 0 ? num_streams : _streams;
+
+    if (manual_core_binding_requested) {
+        validate_core_bindings_or_throw(_stream_processor_ids, _streams, _threads_per_stream);
+    }
 
 #ifdef ENABLE_OPENVINO_DEBUG
     OPENVINO_DEBUG("[ threading ] proc_type_table:");

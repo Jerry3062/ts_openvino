@@ -446,25 +446,37 @@ std::vector<std::vector<int>> get_proc_type_table() {
 
 
     auto ts_core_arr_get = [&cpu]() {
-      std::call_once(flag, [&cpu]() {
-          if (cpu._proc_type_table[0][0] ==1) {
-              if (const char* envValue = std::getenv("TS_OV_BIND_CORES")) {
-                std::vector<int> core_arr;
-                std::stringstream ss(envValue);
-                std::string token;
-
-                while (std::getline(ss, token, '_')) {
-                    core_arr.push_back(std::stoi(token));
+        std::call_once(flag, [&cpu]() {
+            if (const char* envValue = std::getenv("TS_OV_BIND_CORES")) {
+                std::stringstream streamTokens(envValue);
+                std::string streamToken;
+                size_t core_count = 0;
+                while (std::getline(streamTokens, streamToken, '_')) {
+                    if (streamToken.empty()) {
+                        continue;
+                    }
+                    std::stringstream coreTokens(streamToken);
+                    std::string coreToken;
+                    while (std::getline(coreTokens, coreToken, ',')) {
+                        if (coreToken.empty()) {
+                            continue;
+                        }
+                        try {
+                            std::stoi(coreToken);
+                            core_count++;
+                        } catch (const std::exception& e) {
+                            std::cerr << "[OpenVINO] invalid core ID '" << coreToken
+                                      << "' in TS_OV_BIND_CORES, skip (" << e.what() << ")" << std::endl;
+                        }
+                    }
                 }
-                auto core_count = core_arr.size();
-                if (core_count> 1 ) {
-                    std::cout<<"[OpenVINO] ov get core count 1, TS set core count to "<<core_count<<std::endl;
-                    cpu._proc_type_table[0][0] = core_count;
-                    cpu._proc_type_table[0][1] = core_count;
+                if (core_count > 0 && cpu._proc_type_table[0][0] < static_cast<int>(core_count)) {
+                    std::cout << "[OpenVINO] TS_OV_BIND_CORES increases available from " << cpu._proc_type_table[0][0] << " cores to " << core_count << std::endl;
+                    cpu._proc_type_table[0][0] = static_cast<int>(core_count);
+                    cpu._proc_type_table[0][1] = static_cast<int>(core_count);
                 }
             }
-          }
-      });
+        });
     };
     ts_core_arr_get();
 
